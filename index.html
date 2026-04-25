@@ -1,0 +1,1220 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DR. STRANGE HANDS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+    <!-- Tone.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js" crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --fire-color: #FF4400;
+            --ice-color: #00CCFF;
+            --gold-color: #FFD700;
+            --bg-deep: #000008;
+            --bg-alt: #0a0020;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-deep);
+            background: radial-gradient(circle at 50% 30%, var(--bg-alt) 0%, var(--bg-deep) 100%);
+            font-family: 'Orbitron', sans-serif;
+            color: white;
+            user-select: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+        #webcam-video {
+            position: absolute;
+            transform: scaleX(-1);
+            opacity: 0.3;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            pointer-events: none;
+            z-index: -1;
+            mix-blend-mode: color-dodge;
+        }
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #splash-screen, #game-over-screen, #loading-screen, #tutorial-screen {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(10, 0, 32, 0.95) 0%, rgba(0, 0, 8, 0.98) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            text-align: center;
+            pointer-events: all;
+        }
+        h1 {
+            font-size: 4rem;
+            color: var(--gold-color);
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+            margin-bottom: 0.5rem;
+            letter-spacing: 4px;
+            font-weight: 700;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            margin-bottom: 2rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+        }
+        button {
+            background: rgba(0,0,0,0.4);
+            border: 2px solid var(--gold-color);
+            color: var(--gold-color);
+            padding: 1rem 2.5rem;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(5px);
+        }
+        button:hover {
+            background: var(--gold-color);
+            color: black;
+            box-shadow: 0 0 40px var(--gold-color);
+        }
+        .hidden { display: none !important; }
+
+        #debug-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 10px;
+            color: rgba(255,255,255,0.2);
+            z-index: 200;
+        }
+
+        .pixel-text {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.8rem;
+        }
+
+        #tutorial-screen p {
+            margin: 15px 0;
+            font-size: 1.4rem;
+            letter-spacing: 0.1em;
+            color: #ddd;
+        }
+
+        #health-vignette {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 5;
+            transition: opacity 0.5s;
+            opacity: 0;
+            box-shadow: inset 0 0 150px rgba(255, 0, 0, 0.6);
+        }
+
+        .side-vignette-left {
+            position: absolute;
+            inset-y: 0;
+            left: 0;
+            width: 30%;
+            pointer-events: none;
+            opacity: 0.4;
+            background: radial-gradient(circle at 0% 50%, var(--fire-color) 0%, transparent 70%);
+            z-index: 1;
+        }
+        .side-vignette-right {
+            position: absolute;
+            inset-y: 0;
+            right: 0;
+            width: 30%;
+            pointer-events: none;
+            opacity: 0.4;
+            background: radial-gradient(circle at 100% 50%, var(--ice-color) 0%, transparent 70%);
+            z-index: 1;
+        }
+
+        @keyframes pulse-red {
+            0% { opacity: 0.2; }
+            50% { opacity: 0.7; }
+            100% { opacity: 0.2; }
+        }
+        .low-health {
+            animation: pulse-red 1.5s infinite;
+        }
+
+        .mandala-loader {
+            width: 80px;
+            height: 80px;
+            border: 4px solid var(--gold-color);
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: rotate 1.5s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        @keyframes rotate-rev {
+            from { transform: rotate(360deg); }
+            to { transform: rotate(0deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <video id="webcam-video" autoplay playsinline></video>
+    <canvas id="game-canvas"></canvas>
+    
+    <div id="health-vignette"></div>
+    <div class="side-vignette-left"></div>
+    <div class="side-vignette-right"></div>
+
+    <!-- HUD -->
+    <div class="ui-layer">
+        <!-- Everything is drawn on canvas for performance, but we keep UI triggers here -->
+    </div>
+
+    <!-- Screens -->
+    <div id="splash-screen">
+        <div style="width: 200px; height: 200px; border: 4px solid var(--gold-color); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 2rem; border-style: dashed; animation: rotate 10s linear infinite;">
+            <div style="width: 150px; height: 150px; border: 2px solid var(--gold-color); border-radius: 50%; border-style: dotted; animation: rotate-rev 5s linear infinite;"></div>
+        </div>
+        <h1>DR. STRANGE HANDS</h1>
+        <p class="subtitle">Defend with your REAL hands</p>
+        <div style="display: flex; gap: 40px; margin-bottom: 2rem;">
+            <div style="text-align: center;">
+                <div style="color: var(--fire-color); font-size: 2rem;">🔥</div>
+                <div class="pixel-text">LEFT FIRE</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="color: var(--ice-color); font-size: 2rem;">❄️</div>
+                <div class="pixel-text">RIGHT ICE</div>
+            </div>
+        </div>
+        <button id="start-button">BEGIN — ALLOW CAMERA</button>
+    </div>
+
+    <div id="loading-screen" class="hidden">
+        <h1>LOADING MAGIC...</h1>
+        <div class="mandala-loader"></div>
+    </div>
+
+    <div id="tutorial-screen" class="hidden">
+        <p>👋 OPEN PALM = CHARGE SPELL</p>
+        <p>👊 PUSH FORWARD = FIRE</p>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <h1 style="color: #ff3333;">YOU HAVE FALLEN</h1>
+        <p class="subtitle" id="final-stats"></p>
+        <div style="margin: 20px 0;">
+            <h2 class="pixel-text">LEADERBOARD</h2>
+            <div id="leaderboard" style="font-size: 0.9rem; line-height: 2;"></div>
+        </div>
+        <button id="restart-button">RISE AGAIN</button>
+    </div>
+</div>
+
+<div id="debug-info"></div>
+
+<script>
+/**
+ * DR. STRANGE HANDS - ENGINE
+ */
+
+window.onerror = function(msg, url, lineNo, columnNo, error) {
+    // Suppress benign cross-origin errors but log details
+    if (msg === "Script error." && (!url || url === "")) {
+        console.warn("Masked cross-origin script error. This is likely due to CDN security policies. Versions are pinned to minimize this.");
+        return true;
+    }
+    const errorMsg = `Error: ${msg}\nLine: ${lineNo}\nColumn: ${columnNo}\nURL: ${url}`;
+    console.error(errorMsg);
+    if(debugInfo) debugInfo.innerText = errorMsg;
+    return false;
+};
+
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const video = document.getElementById('webcam-video');
+const splashScreen = document.getElementById('splash-screen');
+const loadingScreen = document.getElementById('loading-screen');
+const tutorialScreen = document.getElementById('tutorial-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const healthVignette = document.getElementById('health-vignette');
+const debugInfo = document.getElementById('debug-info');
+
+// Constants & Types
+const ZOMBIE_TYPES = {
+    REGULAR: { hp: 3, speed: 1.1, size: 60, score: 10, color: '#4a7a3a' },
+    ELITE_RUNNER: { hp: 2, speed: 2.4, size: 45, score: 30, color: '#ffeb3b' },
+    ARMORED_TANK: { hp: 18, speed: 0.5, size: 90, score: 60, color: '#607d8b' },
+    APEX_BOSS: { hp: 120, speed: 0.4, size: 150, score: 500, color: '#9c27b0' }
+};
+
+// Game State
+let gameState = 'SPLASH';
+let score = 0;
+let lives = 5;
+let level = 1;
+let wave = 1;
+let waveZombiesToSpawn = 0;
+let waveZombiesSpawned = 0;
+let waveStartTime = 0;
+let gameTime = 0;
+let lastTime = 0;
+let spawnTimer = 0;
+let zombies = [];
+let projectiles = [];
+let particles = [];
+let screenEvents = []; // For floating text
+let screenShake = 0;
+let comboCount = 0;
+let lastKillTime = 0;
+let comboMultiplier = 1;
+let noDamageWave = true;
+let comboTimer = 0;
+let chargePulse = { left: 0, right: 0 };
+
+// Audio
+const sounds = {
+    fireLaunch: null,
+    iceLaunch: null,
+    fireHit: null,
+    iceHit: null,
+    deathFire: null,
+    deathIce: null,
+    waveComplete: null,
+    gameOver: null,
+    lifeLost: null
+};
+
+function initAudio() {
+    sounds.fireLaunch = new Tone.Synth({
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 }
+    }).toDestination();
+    
+    sounds.iceLaunch = new Tone.Synth({
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.05, decay: 0.1, sustain: 0.1, release: 0.5 }
+    }).toDestination();
+    
+    const reverb = new Tone.Reverb(2).toDestination();
+    sounds.iceLaunch.connect(reverb);
+
+    sounds.fireHit = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4 }).toDestination();
+    sounds.iceHit = new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.01 } }).toDestination();
+    
+    sounds.deathFire = new Tone.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 } }).toDestination();
+    sounds.deathIce = new Tone.PolySynth(Tone.Synth).toDestination(); // For crystal shatter
+    
+    sounds.waveComplete = new Tone.PolySynth(Tone.Synth).toDestination();
+    sounds.gameOver = new Tone.PolySynth(Tone.Synth).toDestination();
+    sounds.lifeLost = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.01, decay: 0.5, sustain: 0.1, release: 0.2 } }).toDestination();
+}
+
+// MediaPipe Setup
+let hands;
+let handData = { left: null, right: null };
+let handPrevPos = { left: {x:0, y:0, t:0}, right: {x:0, y:0, t:0} };
+let handVel = { left: {x:0, y:0}, right: {x:0, y:0} };
+let handCooldown = { left: 0, right: 0 };
+let chargeLevels = { left: 0, right: 0 };
+
+async function setupMediaPipe() {
+    hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+    });
+
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.72,
+        minTrackingConfidence: 0.65
+    });
+
+    hands.onResults(onResults);
+
+    const camera = new Camera(video, {
+        onFrame: async () => {
+            await hands.send({ image: video });
+        },
+        width: 640,
+        height: 480
+    });
+    camera.start();
+}
+
+function onResults(results) {
+    try {
+        handData.left = null;
+        handData.right = null;
+
+        if (results.multiHandLandmarks && results.multiHandedness) {
+            for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                const label = results.multiHandedness[i].label; // 'Left' or 'Right'
+                const landmarks = results.multiHandLandmarks[i];
+                if (!landmarks) continue;
+                
+                const data = { landmarks, label };
+                
+                if (label === 'Left') handData.left = data; 
+                else handData.right = data;
+            }
+        }
+    } catch (e) {
+        console.error("Error processing hand data:", e);
+    }
+}
+
+// Utils
+function dist(p1, p2) {
+    return Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2);
+}
+
+function getFingerDist(landmarks) {
+    const palm = landmarks[0];
+    let total = 0;
+    const tips = [4, 8, 12, 16, 20];
+    tips.forEach(t => total += dist(landmarks[t], palm));
+    return total / tips.length;
+}
+
+function getFingerSpread(landmarks) {
+    let total = 0;
+    const tips = [4, 8, 12, 16, 20];
+    for (let i = 1; i < tips.length; i++) {
+        total += dist(landmarks[tips[i-1]], landmarks[tips[i]]);
+    }
+    return total / (tips.length - 1);
+}
+
+// Particle System
+function spawnParticles(x, y, color, count = 10, type = 'fire') {
+    for (let i = 0; i < count; i++) {
+        particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 8 - (type === 'fire' ? 2 : 0),
+            size: Math.random() * 5 + 2,
+            life: 1.0,
+            decay: 0.02 + Math.random() * 0.03,
+            color,
+            type
+        });
+    }
+}
+
+// Drawing Functions
+let footprints = []; // {x, y, life}
+let silhouettes = []; // {x, y, life, type}
+
+function drawZombie(z) {
+    const { x, y, type, state, animFrame, color, side } = z;
+    const info = ZOMBIE_TYPES[type];
+    const w = info.size * 0.7 * (type === 'ARMORED_TANK' ? 1.3 : 1);
+    const h = info.size;
+    
+    ctx.save();
+    ctx.translate(x, y);
+    if (side === -1) ctx.scale(-1, 1); 
+    
+    // Boss specific aura
+    if (type === 'APEX_BOSS') {
+        ctx.save();
+        ctx.globalAlpha = 0.3 + Math.sin(animFrame * 0.1) * 0.2;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(0, 0, info.size * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    
+    // Bobbing
+    const bob = Math.sin(animFrame * 0.2) * (type === 'ELITE_RUNNER' ? 6 : 3);
+    ctx.translate(0, bob);
+
+    // Hit effects
+    if (state === 'HIT_FIRE') ctx.filter = 'brightness(2) sepia(1) hue-rotate(-50deg)';
+    if (state === 'HIT_ICE') ctx.filter = 'brightness(1.5) cyan(1)';
+    if (state === 'FROZEN') ctx.filter = 'brightness(0.8) saturate(0.5) contrast(1.2)';
+
+    // Body (Among Us Crewmate style)
+    ctx.fillStyle = color;
+    // Backpack
+    ctx.fillRect(-w/2 - 10, -h/2 + 10, 15, h * 0.6);
+    
+    // Main Body
+    ctx.beginPath();
+    ctx.roundRect(-w/2, -h/2, w, h * 0.8, 15);
+    ctx.fill();
+
+    // Legs
+    const step = Math.sin(animFrame * 0.2) * 5;
+    ctx.fillRect(-w/2 + 5, h * 0.2 + (step > 0 ? step : 0), 12, 15);
+    ctx.fillRect(w/2 - 17, h * 0.2 + (step < 0 ? -step : 0), 12, 15);
+
+    // Visor
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.roundRect(-w/4, -h/3, w * 0.8, h * 0.3, 10);
+    ctx.fill();
+    
+    // Cracked glass / glow
+    if (z.hp > 0) {
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+        ctx.beginPath();
+        ctx.arc(-w/6, -h/5, 3, 0, Math.PI * 2);
+        ctx.arc(w/4, -h/5, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Arm
+    ctx.fillStyle = color;
+    const armAngle = -0.5 + Math.sin(animFrame * 0.1) * 0.2;
+    ctx.save();
+    ctx.translate(-w/2 + 5, -5);
+    ctx.rotate(armAngle);
+    ctx.fillRect(-20, -5, 25, 10);
+    ctx.restore();
+
+    // Overlay fire/ice particles if state
+    if (state === 'BURNING') {
+        ctx.fillStyle = '#ff6600';
+        for(let i=0; i<3; i++) ctx.fillRect((Math.random()-0.5)*w, (Math.random()-0.5)*h, 4, 4);
+    }
+    if (state === 'FROZEN') {
+        ctx.fillStyle = '#ccffff';
+        for(let i=0; i<3; i++) ctx.fillRect((Math.random()-0.5)*w, (Math.random()-0.5)*h, 5, 5);
+    }
+
+    ctx.restore();
+}
+
+function drawMandala(x, y, radius, angle, color, points, pulse = 0, chargePulse = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    
+    const extraRadius = chargePulse * 30; // The "blowing up" effect
+    const currentRadius = radius + extraRadius;
+    
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 + pulse * 4 + chargePulse * 6;
+    ctx.shadowBlur = 10 + pulse * 20 + chargePulse * 30;
+    ctx.shadowColor = color;
+
+    // Smooth circle layers
+    for (let j = 0; j < 2; j++) {
+        ctx.beginPath();
+        ctx.arc(0, 0, currentRadius * (1 - j * 0.2), 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // High-resolution geometric shape
+    ctx.beginPath();
+    const resolution = points * 4; // Smoother geometry
+    for (let i = 0; i < resolution; i++) {
+        const a = (i / resolution) * Math.PI * 2;
+        const outerR = currentRadius;
+        const innerR = currentRadius * 0.6;
+        const r = (i % 2 === 0) ? outerR : innerR;
+        
+        const px = Math.cos(a) * r;
+        const py = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+        
+        // Connecting lines to center for magic look
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.moveTo(0, 0);
+        ctx.lineTo(px, py);
+        ctx.restore();
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Inner core
+    ctx.beginPath();
+    ctx.arc(0, 0, currentRadius * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+function drawHUD() {
+    ctx.save();
+    
+    // Lives
+    const heartSize = 34;
+    for (let i = 0; i < 5; i++) {
+        const active = i < lives;
+        ctx.fillStyle = active ? '#ef4444' : 'rgba(239, 68, 68, 0.2)';
+        ctx.shadowBlur = active ? 15 : 0;
+        ctx.shadowColor = 'rgba(239, 68, 68, 0.8)';
+        ctx.font = `${heartSize}px serif`;
+        ctx.fillText('❤', 30 + i * 45, 60);
+    }
+
+    // Score
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 0;
+    
+    // Score Label
+    ctx.fillStyle = '#eab308';
+    ctx.font = '700 10px Orbitron';
+    ctx.fillText('CURRENT SCORE', canvas.width / 2, 35);
+    
+    // Score Value
+    ctx.fillStyle = '#eab308';
+    ctx.font = '700 52px Orbitron';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = 'rgba(234, 179, 8, 0.4)';
+    ctx.fillText(score.toString().padStart(6, '0'), canvas.width / 2, 85);
+
+    // Level & Wave Info
+    ctx.textAlign = 'right';
+    ctx.shadowBlur = 0;
+    
+    // Level Label
+    ctx.fillStyle = '#93c5fd';
+    ctx.font = '700 10px Orbitron';
+    ctx.fillText(`LEVEL ${level}`, canvas.width - 30, 35);
+    
+    // Wave Value
+    ctx.fillStyle = 'white';
+    ctx.font = '700 32px Orbitron';
+    ctx.fillText(`WAVE ${wave.toString().padStart(2, '0')}`, canvas.width - 30, 70);
+    
+    // Wave Progress Bar
+    const barW = 160;
+    const barH = 5;
+    const progress = waveZombiesSpawned / waveZombiesToSpawn;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fillRect(canvas.width - barW - 30, 85, barW, barH);
+    ctx.fillStyle = '#60a5fa';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#60a5fa';
+    ctx.fillRect(canvas.width - barW - 30, 85, barW * (1 - progress), barH);
+
+    // Combo
+    if (comboCount > 1) {
+        ctx.textAlign = 'center';
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height - 120);
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(-200, -20, 400, 60);
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-200, -20, 400, 60);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '700 italic 44px Orbitron';
+        ctx.fillText('COMBO ', -10, 25);
+        ctx.fillStyle = '#eab308';
+        ctx.fillText(`X${comboCount}`, 120, 25);
+        
+        ctx.font = '700 9px Orbitron';
+        ctx.fillStyle = '#854d0e';
+        ctx.fillText('ANCIENT DECIMATOR STATUS', 0, 50);
+        ctx.restore();
+    }
+
+    ctx.restore();
+}
+
+function spawnZombie() {
+    if (waveZombiesSpawned >= waveZombiesToSpawn) return;
+
+    let type = 'REGULAR';
+    const rand = Math.random();
+    
+    // Level-based spawning
+    if (level >= 3 && rand < 0.1) type = 'APEX_BOSS';
+    else if (level >= 2 && rand < 0.3) type = 'ARMORED_TANK';
+    else if (rand < 0.4) type = 'ELITE_RUNNER';
+
+    const info = ZOMBIE_TYPES[type];
+    const groundY = canvas.height * 0.72;
+    const side = Math.random() > 0.5 ? 1 : -1; // 1 for right, -1 for left
+    
+    zombies.push({
+        x: side === 1 ? canvas.width + 100 : -100,
+        y: groundY - info.size/2 + (Math.random() - 0.5) * 40,
+        side: side,
+        hp: info.hp,
+        maxHp: info.hp,
+        type,
+        state: 'WALKING',
+        animFrame: Math.random() * 100,
+        speed: (info.speed + (wave - 1) * 0.1) * side,
+        color: info.color,
+        id: Date.now() + Math.random(),
+        lastFootprintFrame: -1
+    });
+
+    waveZombiesSpawned++;
+}
+
+function startWave(num) {
+    wave = num;
+    if (wave > 5) {
+        level++;
+        wave = 1;
+        screenEvents.push({
+            text: `LEVEL ${level} REACHED!`,
+            x: canvas.width / 2,
+            y: canvas.height / 2 - 100,
+            life: 2.5,
+            size: 70,
+            color: '#eab308'
+        });
+    }
+    waveZombiesToSpawn = 3 + (wave - 1) * 3 + (level - 1) * 5;
+    waveZombiesSpawned = 0;
+    spawnTimer = 0;
+    noDamageWave = true;
+    gameState = 'PLAY';
+    
+    screenEvents.push({
+        text: `LEVEL ${level} - WAVE ${wave}`,
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        life: 1.5,
+        size: 50,
+        color: 'gold'
+    });
+}
+
+function update(delta) {
+    if (gameState !== 'PLAY') return;
+
+    gameTime += delta;
+    
+    // Spawning
+    spawnTimer += delta;
+    const spawnRate = Math.max(0.5, 3.5 - (wave - 1) * 0.3);
+    if (spawnTimer > spawnRate && waveZombiesSpawned < waveZombiesToSpawn) {
+        spawnZombie();
+        spawnTimer = 0;
+    }
+
+    // Wave Completion condition
+    if (waveZombiesSpawned >= waveZombiesToSpawn && zombies.length === 0) {
+        if (gameState === 'PLAY') {
+            gameState = 'WAVE_COMPLETE';
+            const bonus = noDamageWave ? 50 : 0;
+            score += bonus;
+            
+            sounds.waveComplete.triggerAttackRelease(["C4", "E4", "G4"], "0.5");
+            
+            setTimeout(() => {
+                startWave(wave + 1);
+            }, 4000);
+        }
+    }
+
+    // Update Zombies
+    for (let i = zombies.length - 1; i >= 0; i--) {
+        const z = zombies[i];
+        if (z.state !== 'FROZEN') {
+            // Boss attack patterns
+            if (z.type === 'APEX_BOSS') {
+                z.patternTimer = (z.patternTimer || 0) + 0.016;
+                if (z.patternTimer > 4) {
+                    z.burstTimer = 1.0; // 1 second of speed burst
+                    z.patternTimer = 0;
+                }
+                
+                if (z.burstTimer > 0) {
+                    z.x -= z.speed * 3.5; // Triple speed dash
+                    z.burstTimer -= 0.016;
+                    // Leave silhouettes
+                    if (Math.random() > 0.7) spawnParticles(z.x, z.y, z.color, 2, 'fire');
+                } else {
+                    z.x -= z.speed;
+                }
+            } else {
+                z.x -= z.speed;
+            }
+            
+            z.animFrame += Math.abs(z.speed) * 2;
+            
+            // Footprints logic
+            if (Math.floor(z.animFrame) % 15 === 0 && Math.floor(z.animFrame) !== z.lastFootprintFrame) {
+                footprints.push({ x: z.x, y: canvas.height * 0.72 + 5, life: 3.0 });
+                z.lastFootprintFrame = Math.floor(z.animFrame);
+            }
+        } else {
+            z.frozenTimer -= delta;
+            if (z.frozenTimer <= 0) z.state = 'WALKING';
+        }
+
+        // Target Center Check
+        const centerX = canvas.width / 2;
+        if ((z.side === 1 && z.x < centerX - 20) || (z.side === -1 && z.x > centerX + 20)) {
+            lives--;
+            noDamageWave = false;
+            zombies.splice(i, 1);
+            sounds.lifeLost.triggerAttackRelease("0.5");
+            screenShake = 15;
+            if (lives <= 0) gameOver();
+        }
+    }
+
+    // Projectiles
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.type === 'fire') p.vy += 0.05; // Gravity arc
+        
+        // Trail
+        p.trail.push({x: p.x, y: p.y});
+        if (p.trail.length > 10) p.trail.shift();
+
+        // Bounds
+        if (p.x > canvas.width || p.x < 0 || p.y > canvas.height) {
+            projectiles.splice(i, 1);
+            continue;
+        }
+
+        // Collision
+        let hit = false;
+        zombies.forEach((z) => {
+            const info = ZOMBIE_TYPES[z.type];
+            if (p.x > z.x - info.size/2 && p.x < z.x + info.size/2 &&
+                p.y > z.y - info.size/2 && p.y < z.y + info.size/2) {
+                
+                hitZombie(z, p.type);
+                hit = true;
+            }
+        });
+        if (hit) projectiles.splice(i, 1);
+    }
+
+    // Particles
+    particles.forEach((p, idx) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        if (p.life <= 0) particles.splice(idx, 1);
+    });
+
+    // Screen Events
+    screenEvents.forEach((ev, idx) => {
+        ev.life -= 0.016;
+        ev.y -= 1;
+        if (ev.life <= 0) screenEvents.splice(idx, 1);
+    });
+
+    if (screenShake > 0) screenShake *= 0.9;
+    
+    // Cooldowns
+    if (handCooldown.left > 0) handCooldown.left--;
+    if (handCooldown.right > 0) handCooldown.right--;
+
+    if (comboCount > 0 && Date.now() - lastKillTime > 2000) {
+        comboCount = 0;
+    }
+}
+
+function hitZombie(z, type) {
+    if (z.hp <= 0) return;
+
+    const wasFrozen = z.state === 'FROZEN';
+    z.hp--;
+    
+    if (type === 'fire') {
+        z.state = 'HIT_FIRE';
+        z.x += 10;
+        sounds.fireHit.triggerAttackRelease("C2", "0.1");
+        spawnParticles(z.x, z.y, 'orange', 15, 'fire');
+        setTimeout(() => { if(z.hp > 0) z.state = 'BURNING'; }, 100);
+        
+        if (wasFrozen) {
+            score += 30;
+            screenEvents.push({ text: 'COMBO KILL!', x: z.x, y: z.y - 40, size: 24, color: 'rainbow', life: 1 });
+            z.hp = 0; // Instance kill for combo
+        }
+    } else {
+        z.state = 'HIT_ICE';
+        sounds.iceHit.triggerAttack();
+        spawnParticles(z.x, z.y, '#ccffff', 15, 'ice');
+        z.state = 'FROZEN';
+        z.frozenTimer = 2.5; // seconds
+    }
+
+    if (z.hp <= 0) {
+        killZombie(z, type);
+    }
+}
+
+function killZombie(z, type) {
+    const info = ZOMBIE_TYPES[z.type];
+    
+    // Score & Combo
+    score += info.score;
+    lastKillTime = Date.now();
+    comboCount++;
+    if (comboCount >= 10 && comboCount % 10 === 0) {
+        screenEvents.push({ text: 'DECIMATOR!', x: canvas.width/2, y: canvas.height/2, size: 60, color: 'gold', life: 1.5 });
+    }
+
+    if (type === 'fire') {
+        sounds.deathFire.triggerAttackRelease("0.3");
+        spawnParticles(z.x, z.y, 'orange', 30, 'fire');
+        screenShake = 5;
+    } else {
+        sounds.deathIce.triggerAttackRelease(["C5", "E5", "G5"], "0.1");
+        spawnParticles(z.x, z.y, '#88eeff', 20, 'ice');
+    }
+
+    if (z.type === 'APEX_BOSS') {
+        screenShake = 30;
+        spawnParticles(z.x, z.y, 'gold', 50, 'fire');
+        screenEvents.push({ text: 'BOSS DEFEATED!', x: canvas.width/2, y: canvas.height/2 - 100, size: 60, color: 'gold', life: 2 });
+    }
+
+    zombies = zombies.filter(item => item.id !== z.id);
+    
+    screenEvents.push({ text: `+${info.score}`, x: z.x, y: z.y, size: 20, color: 'white', life: 0.8 });
+}
+
+function gameOver() {
+    gameState = 'GAME_OVER';
+    sounds.gameOver.triggerAttackRelease(["C3", "Eb3", "G3"], "1");
+    document.getElementById('final-stats').innerText = `SCORE: ${score} | WAVE: ${wave}`;
+    saveHighScore();
+    showLeaderboard();
+    gameOverScreen.classList.remove('hidden');
+}
+
+function saveHighScore() {
+    let scores = JSON.parse(localStorage.getItem('dr_strange_highscores') || '[]');
+    scores.push({ score, wave, date: new Date().toLocaleDateString() });
+    scores.sort((a, b) => b.score - a.score);
+    scores = scores.slice(0, 5);
+    localStorage.setItem('dr_strange_highscores', JSON.stringify(scores));
+}
+
+function showLeaderboard() {
+    const container = document.getElementById('leaderboard');
+    let scores = JSON.parse(localStorage.getItem('dr_strange_highscores') || '[]');
+    container.innerHTML = scores.map((s, i) => `<div>${i+1}. ${s.score.toString().padStart(6, '0')} (WAVE ${s.wave})</div>`).join('');
+}
+
+function processGestures() {
+    if (!handData.left && !handData.right) {
+        return;
+    }
+
+    const handsToProcess = [
+        { data: handData.left, side: 'left', type: 'fire', color: 'var(--fire-color)' },
+        { data: handData.right, side: 'right', type: 'ice', color: 'var(--ice-color)' }
+    ];
+
+    handsToProcess.forEach(hand => {
+        if (!hand.data) {
+            chargeLevels[hand.side] = 0;
+            return;
+        }
+
+        const landmarks = hand.data.landmarks;
+        const spread = getFingerSpread(landmarks);
+        const distPalm = getFingerDist(landmarks);
+        
+        const wrist = landmarks[0];
+        const px = (1 - wrist.x) * canvas.width;
+        const py = wrist.y * canvas.height;
+
+        const prev = handPrevPos[hand.side];
+        const dt = (Date.now() - prev.t) / 1000;
+        if (dt > 0) {
+            handVel[hand.side].x = (px - prev.x) / dt;
+            handVel[hand.side].y = (py - prev.y) / dt;
+        }
+        handPrevPos[hand.side] = { x: px, y: py, t: Date.now() };
+
+        const isOpen = spread > 0.08 || distPalm > 0.15;
+        if (isOpen) {
+            chargeLevels[hand.side] = Math.min(1.0, chargeLevels[hand.side] + 0.2);
+            
+            // AUTO-FIRE: Firing as long as hand is open
+            if (handCooldown[hand.side] <= 0) {
+                fireSpell(px, py, hand.type, hand.side);
+                chargePulse[hand.side] = 1.0; 
+                // Feedback particles at emitter
+                spawnParticles(px, py, hand.color === 'var(--fire-color)' ? 'orange' : '#88eeff', 5, hand.type);
+            }
+        } else {
+            chargeLevels[hand.side] = Math.max(0, chargeLevels[hand.side] - 0.2);
+        }
+        
+        if (chargePulse[hand.side] > 0) chargePulse[hand.side] -= 0.1;
+    });
+}
+
+function fireSpell(x, y, type, side) {
+    handCooldown[side] = 8; // Faster rapid fire for "Avenger" feel
+    
+    // Target logic: fire toward the closer half of the screen
+    const targetX = x < canvas.width / 2 ? 0 : canvas.width;
+    const targetY = canvas.height * 0.6 + (Math.random() - 0.5) * 100;
+    
+    const dx = targetX - x;
+    const dy = targetY - y;
+    const distTarget = Math.sqrt(dx*dx + dy*dy);
+    const speed = type === 'fire' ? 18 : 22;
+
+    projectiles.push({
+        x, y,
+        vx: (dx / distTarget) * speed,
+        vy: (dy / distTarget) * speed,
+        type,
+        trail: [],
+        radius: type === 'fire' ? 15 : 12, // More compact "pulse" size
+        isLaser: true
+    });
+
+    if (type === 'fire') {
+        sounds.fireLaunch.triggerAttackRelease(400 + Math.random() * 200, "0.05");
+    } else {
+        sounds.iceLaunch.triggerAttackRelease(1000 + Math.random() * 500, "0.05");
+    }
+}
+
+function render() {
+    // Clear
+    ctx.fillStyle = '#000008';
+    ctx.fillRect(0,0, canvas.width, canvas.height);
+
+    // Screen Shake
+    ctx.save();
+    if (screenShake > 0) ctx.translate((Math.random()-0.5)*screenShake, (Math.random()-0.5)*screenShake);
+
+    // Background Layers
+    // Stars
+    ctx.fillStyle = 'white';
+    for(let i=0; i<50; i++) {
+        const sx = (Math.sin(i*123) * 0.5 + 0.5) * canvas.width;
+        const sy = (Math.cos(i*456) * 0.5 + 0.5) * canvas.height * 0.7;
+        ctx.globalAlpha = 0.2 + Math.sin(gameTime * 0.001 + i) * 0.2;
+        ctx.fillRect(sx, sy, 2, 2);
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Ground
+    const groundY = canvas.height * 0.72;
+    ctx.fillStyle = '#0d0d0d';
+    ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+    ctx.strokeStyle = '#1a1a1a';
+    for(let i=0; i<20; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 100, groundY);
+        ctx.lineTo(i * 100 - 100, canvas.height);
+        ctx.stroke();
+    }
+
+    // Footprints
+    ctx.fillStyle = 'rgba(74, 122, 58, 0.3)';
+    footprints.forEach((f, idx) => {
+        f.life -= 0.016;
+        if (f.life <= 0) footprints.splice(idx, 1);
+        else ctx.fillRect(f.x, f.y, 8, 4);
+    });
+
+    // Silhouettes
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    zombies.forEach(z => {
+        if (z.x > canvas.width - 100) {
+            ctx.filter = 'brightness(0) blur(2px)';
+            drawZombie(z);
+            ctx.filter = 'none';
+        }
+    });
+
+    // Zombies
+    zombies.sort((a,b) => a.y - b.y).forEach(drawZombie);
+
+    // Projectiles
+    projectiles.forEach(p => {
+        ctx.save();
+        // Trail - longer and more vibrant
+        ctx.lineWidth = 6;
+        const gradient = ctx.createLinearGradient(p.x - p.vx * 10, p.y - p.vy * 10, p.x, p.y);
+        if (p.type === 'fire') {
+            gradient.addColorStop(0, 'rgba(255, 68, 0, 0)');
+            gradient.addColorStop(1, 'rgba(255, 120, 0, 0.8)');
+        } else {
+            gradient.addColorStop(0, 'rgba(0, 204, 255, 0)');
+            gradient.addColorStop(1, 'rgba(100, 240, 255, 0.8)');
+        }
+        ctx.strokeStyle = gradient;
+        ctx.beginPath();
+        p.trail.forEach((pos, i) => {
+            if (i === 0) ctx.moveTo(pos.x, pos.y);
+            else ctx.lineTo(pos.x, pos.y);
+        });
+        ctx.stroke();
+
+        // Object - Energy Pulse shape
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Math.atan2(p.vy, p.vx));
+        ctx.fillStyle = p.type === 'fire' ? 'var(--fire-color)' : 'var(--ice-color)';
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = ctx.fillStyle;
+        
+        // Drawing an elongated "pill" shape for a pulse/laser look
+        ctx.beginPath();
+        ctx.roundRect(-20, -p.radius/2, 40, p.radius, p.radius/2);
+        ctx.fill();
+        
+        // White core for intensity
+        ctx.fillStyle = 'white';
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.roundRect(-15, -p.radius/4, 30, p.radius/2, p.radius/4);
+        ctx.fill();
+        
+        ctx.restore();
+    });
+
+    // Magic Mandalas
+    if (handData.left) {
+        const wrist = handData.left.landmarks[0];
+        const x = (1 - wrist.x) * canvas.width;
+        const y = wrist.y * canvas.height;
+        const pulse = chargeLevels.left;
+        drawMandala(x, y, 60 + pulse * 20, gameTime * 0.0012 * (pulse*3+1), 'orange', 8, pulse, chargePulse.left);
+    }
+    if (handData.right) {
+        const wrist = handData.right.landmarks[0];
+        const x = (1 - wrist.x) * canvas.width;
+        const y = wrist.y * canvas.height;
+        const pulse = chargeLevels.right;
+        drawMandala(x, y, 60 + pulse * 20, -gameTime * 0.001 * (pulse*3+1), '#00ccff', 6, pulse, chargePulse.right);
+    }
+
+    // Particles
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Screen Events
+    screenEvents.forEach(ev => {
+        ctx.save();
+        ctx.globalAlpha = ev.life;
+        ctx.textAlign = 'center';
+        ctx.font = `bold ${ev.size}px Orbitron`;
+        if (ev.color === 'rainbow') {
+            ctx.fillStyle = `hsl(${gameTime % 360}, 100%, 50%)`;
+        } else {
+            ctx.fillStyle = ev.color;
+        }
+        ctx.fillText(ev.text, ev.x, ev.y);
+        ctx.restore();
+    });
+
+    ctx.restore(); // Undo screen shake
+
+    drawHUD();
+    
+    // Low health pulse
+    if (lives === 1) healthVignette.classList.add('low-health');
+    else healthVignette.classList.remove('low-health');
+}
+
+function loop(time) {
+    const delta = (time - lastTime) / 1000;
+    lastTime = time;
+
+    processGestures();
+    update(60 * 0.016); // Lock to roughly 60fps logic
+    render();
+
+    requestAnimationFrame(loop);
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+// Initialization
+document.getElementById('start-button').addEventListener('click', async () => {
+    splashScreen.classList.add('hidden');
+    loadingScreen.classList.remove('hidden');
+    
+    try {
+        await setupMediaPipe();
+        initAudio();
+        
+        loadingScreen.classList.add('hidden');
+        tutorialScreen.classList.remove('hidden');
+        
+        setTimeout(() => {
+            tutorialScreen.classList.add('hidden');
+            startWave(1);
+            requestAnimationFrame(loop);
+        }, 3000);
+    } catch (err) {
+        console.error(err);
+        alert("Camera access denied or MediaPipe error. Check console.");
+    }
+});
+
+document.getElementById('restart-button').addEventListener('click', () => {
+    lives = 5;
+    score = 0;
+    wave = 1;
+    zombies = [];
+    projectiles = [];
+    particles = [];
+    gameOverScreen.classList.add('hidden');
+    startWave(1);
+});
+
+window.addEventListener('resize', resize);
+resize();
+
+</script>
+</body>
+</html>

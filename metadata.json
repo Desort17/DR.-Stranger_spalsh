@@ -1,0 +1,6 @@
+{
+  "name": "DR. STRANGE HANDS",
+  "description": "A webcam gesture-controlled zombie survival game powered by MediaPipe Hands and Tone.js. Use your real hands to fire spells!",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
